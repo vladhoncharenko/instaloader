@@ -153,11 +153,15 @@ class Instaloader:
                  post_metadata_txt_pattern: str = None,
                  storyitem_metadata_txt_pattern: str = None,
                  max_connection_attempts: int = 3,
-                 commit_mode: bool = False):
+                 commit_mode: bool = False,
+                 channel: Optional[str] = None,
+                 bucket: Optional[str] = None,):
 
-        self.context = InstaloaderContext(sleep, quiet, user_agent, max_connection_attempts)
+        self.context = InstaloaderContext(bucket, channel, sleep, quiet, user_agent, max_connection_attempts)
 
         # configuration parameters
+        self.channel = channel
+        self.bucket = bucket
         self.dirname_pattern = dirname_pattern or "{target}"
         self.filename_pattern = filename_pattern or "{date_utc}_UTC"
         self.download_pictures = download_pictures
@@ -206,7 +210,7 @@ class Instaloader:
         self.close()
 
     @_retry_on_connection_error
-    def download_pic(self, filename: str, url: str, mtime: datetime,
+    def download_pic(self, post, filename: str, url: str, mtime: datetime,
                      filename_suffix: Optional[str] = None, _attempt: int = 1) -> bool:
         """Downloads and saves picture with given url under given directory with given timestamp.
         Returns true, if file was actually downloaded, i.e. updated."""
@@ -216,16 +220,17 @@ class Instaloader:
             filename += '_' + filename_suffix
         filename += '.' + file_extension
         # A post is considered "commited" if the json file exists and is not malformed.
-        if self.commit_mode:
-            if self._committed and os.path.isfile(filename):
-                self.context.log(filename + ' exists', end=' ', flush=True)
-                return False
-        else:
-            if os.path.isfile(filename):
-                self.context.log(filename + ' exists', end=' ', flush=True)
-                return False
-        self.context.get_and_write_raw(url, filename)
-        os.utime(filename, (datetime.now().timestamp(), mtime.timestamp()))
+        #if self.commit_mode:
+            #if self._committed and os.path.isfile(filename):
+                #self.context.log(filename + ' exists', end=' ', flush=True)
+                #return False
+        #else:
+            #if os.path.isfile(filename):
+                #self.context.log(filename + ' exists', end=' ', flush=True)
+                #return False
+        metadata_string = _ArbitraryItemFormatter(post).format(self.post_metadata_txt_pattern).strip()
+        self.context.get_and_write_raw(post,metadata_string, url, filename)
+        #os.utime(filename, (datetime.now().timestamp(), mtime.timestamp()))
         return True
 
     def save_metadata_json(self, filename: str, structure: JsonExportable) -> None:
@@ -427,47 +432,51 @@ class Instaloader:
         # Download the image(s) / video thumbnail and videos within sidecars if desired
         downloaded = True
         self._committed = self.check_if_committed(filename)
+        if post.is_video:
+            url=post.video_url
+        else:
+            url = post.url
         if self.download_pictures:
             if post.typename == 'GraphSidecar':
                 edge_number = 1
                 for sidecar_node in post.get_sidecar_nodes():
                     # Download picture or video thumbnail
                     if not sidecar_node.is_video or self.download_video_thumbnails is True:
-                        downloaded &= self.download_pic(filename=filename, url=sidecar_node.display_url,
+                        downloaded &= self.download_pic(post=post, filename=filename, url=sidecar_node.display_url,
                                                         mtime=post.date_local, filename_suffix=str(edge_number))
                     # Additionally download video if available and desired
                     if sidecar_node.is_video and self.download_videos is True:
-                        downloaded &= self.download_pic(filename=filename, url=sidecar_node.video_url,
+                        downloaded &= self.download_pic(post=post, filename=filename, url=sidecar_node.video_url,
                                                         mtime=post.date_local, filename_suffix=str(edge_number))
                     edge_number += 1
             elif post.typename == 'GraphImage':
-                downloaded = self.download_pic(filename=filename, url=post.url, mtime=post.date_local)
+                downloaded = self.download_pic(post=post, filename=filename, url=url, mtime=post.date_local)
             elif post.typename == 'GraphVideo':
                 if self.download_video_thumbnails is True:
-                    downloaded = self.download_pic(filename=filename, url=post.url, mtime=post.date_local)
+                    downloaded = self.download_pic(post=post, filename=filename, url=url, mtime=post.date_local)
             else:
                 self.context.error("Warning: {0} has unknown typename: {1}".format(post, post.typename))
 
         # Save caption if desired
-        metadata_string = _ArbitraryItemFormatter(post).format(self.post_metadata_txt_pattern).strip()
-        if metadata_string:
-            self.save_caption(filename=filename, mtime=post.date_local, caption=metadata_string)
+        #metadata_string = _ArbitraryItemFormatter(post).format(self.post_metadata_txt_pattern).strip()
+        #if metadata_string:
+            #self.save_caption(filename=filename, mtime=post.date_local, caption=metadata_string)
 
         # Download video if desired
-        if post.is_video and self.download_videos is True:
-            downloaded &= self.download_pic(filename=filename, url=post.video_url, mtime=post.date_local)
+        #if post.is_video and self.download_videos is True:
+            #downloaded &= self.download_pic(filename=filename, url=post.video_url, mtime=post.date_local)
 
         # Download geotags if desired
-        if self.download_geotags and post.location:
-            self.save_location(filename, post.location, post.date_local)
+        #if self.download_geotags and post.location:
+            #self.save_location(filename, post.location, post.date_local)
 
         # Update comments if desired
-        if self.download_comments is True:
-            self.update_comments(filename=filename, post=post)
+        #if self.download_comments is True:
+            #self.update_comments(filename=filename, post=post)
 
         # Save metadata as JSON if desired.
-        if self.save_metadata is not False:
-            self.save_metadata_json(filename, post)
+        #if self.save_metadata is not False:
+            #self.save_metadata_json(filename, post)
 
         self.context.log()
         return downloaded

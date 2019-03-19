@@ -8,15 +8,23 @@ import sys
 import textwrap
 import time
 import urllib.parse
+import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, Iterator, Optional, Union
 
+import boto3
+import pymongo
 import requests
 import requests.utils
 
 from .exceptions import *
 
+session = boto3.Session()
+s3 = session.resource('s3')
+mongo_client = pymongo.MongoClient("mongodb://admin:DqVp7MKleg4y7YXk@ds117960.mlab.com:17960/content-metadata")
+db = mongo_client['content-metadata']
+content = db['content']
 
 def copy_session(session: requests.Session) -> requests.Session:
     """Duplicates a requests.Session."""
@@ -46,14 +54,16 @@ class InstaloaderContext:
     class :class:`Instaloader`.
     """
 
-    def __init__(self, sleep: bool = True, quiet: bool = False, user_agent: Optional[str] = None,
-                 max_connection_attempts: int = 3):
+    def __init__(self, bucket, channel, sleep: bool = True, quiet: bool = False, user_agent: Optional[str] = None,
+                 max_connection_attempts: int = 3 ):
 
         self.user_agent = user_agent if user_agent is not None else default_user_agent()
         self._session = self.get_anonymous_session()
         self.username = None
         self.sleep = sleep
         self.quiet = quiet
+        self.channel = channel
+        self.bucket = bucket
         self.max_connection_attempts = max_connection_attempts
         self._graphql_page_length = 50
         self._root_rhx_gis = None
@@ -514,13 +524,40 @@ class InstaloaderContext:
                 raise QueryReturnedNotFoundException("404 when accessing {}.".format(url))
             raise ConnectionException("HTTP error code {}.".format(resp.status_code))
 
-    def get_and_write_raw(self, url: str, filename: str) -> None:
+    def get_and_write_raw(self, post, metadata_string, url: str, filename: str) -> None:
         """Downloads and writes anonymously-requested raw data into a file.
 
         :raises QueryReturnedNotFoundException: When the server responds with a 404.
         :raises QueryReturnedForbiddenException: When the server responds with a 403.
         :raises ConnectionException: When download repeatedly failed."""
-        self.write_raw(self.get_raw(url), filename)
+
+        if content.find({'PostId': post.shortcode}).count() == 0:
+            bucket = s3.Bucket(self.bucket)
+            if ".jpg?" in url:
+                ext = ".jpg"
+            else:
+                ext = ".mp4"
+            file_name = uuid.uuid4().__str__() + ext
+            file_format = getFileFormat(ext)
+            bucket.upload_fileobj(self.get_raw(url).raw, self.channel + "/Instagram/" + file_name)
+
+            content.insert_one(
+                {
+                        "Channel": self.channel,
+                        "ContentMetadataId": uuid.uuid4().__str__(),
+                        "CreatedOn": str(datetime.now()),
+                        "FileBlobId": file_name,
+                        "Format": file_format,
+                        "OriginalDescription": metadata_string,
+                        "ModifiedDescription": "",
+                        "Comments": "",
+                        "Published": False,
+                        "Source": "Instagram",
+                        "Starred": True,
+                        "PostId": post.shortcode
+                }
+            )
+
 
     @property
     def root_rhx_gis(self) -> Optional[str]:
@@ -532,3 +569,9 @@ class InstaloaderContext:
         if not self._root_rhx_gis:
             self._root_rhx_gis = self.get_json('', {})['rhx_gis']
         return self._root_rhx_gis
+
+def getFileFormat(file_ext):
+    if file_ext == ".mp4":
+        return "Video"
+
+    return "Picture"

@@ -64,7 +64,8 @@ def _main(instaloader: Instaloader, targetlist: List[str],
           download_stories: bool = False, download_highlights: bool = False, download_tagged: bool = False,
           fast_update: bool = False,
           max_count: Optional[int] = None, post_filter_str: Optional[str] = None,
-          storyitem_filter_str: Optional[str] = None) -> None:
+          storyitem_filter_str: Optional[str] = None, channel: Optional[str] = None,
+                             bucket: Optional[str] = None) -> None:
     """Download set of profiles, hashtags etc. and handle logging in and session files if desired."""
     # Parse and generate filter function
     post_filter = None
@@ -284,6 +285,12 @@ def main():
     g_prof.add_argument('--tagged', action='store_true',
                         help='Also download posts where each profile is tagged.')
 
+    g_targets.add_argument('--channel',
+                        help='')
+
+    g_targets.add_argument('--bucket',
+                        help='')
+
     g_cond = parser.add_argument_group("Which Posts to Download")
 
     g_cond.add_argument('-F', '--fast-update', action='store_true',
@@ -393,7 +400,9 @@ def main():
                              post_metadata_txt_pattern=post_metadata_txt_pattern,
                              storyitem_metadata_txt_pattern=storyitem_metadata_txt_pattern,
                              max_connection_attempts=args.max_connection_attempts,
-                             commit_mode=args.commit_mode)
+                             commit_mode=args.commit_mode,
+                             channel=args.channel,
+                             bucket=args.bucket)
         _main(loader,
               args.profile,
               username=args.login.lower() if args.login is not None else None,
@@ -407,7 +416,9 @@ def main():
               fast_update=args.fast_update,
               max_count=int(args.count) if args.count is not None else None,
               post_filter_str=args.post_filter,
-              storyitem_filter_str=args.storyitem_filter)
+              storyitem_filter_str=args.storyitem_filter,
+              channel=args.channel,
+              bucket=args.bucket)
         loader.close()
     except InstaloaderException as err:
         raise SystemExit("Fatal error: %s" % err)
