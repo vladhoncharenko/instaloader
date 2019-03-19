@@ -22,7 +22,7 @@ from .exceptions import *
 
 session = boto3.Session()
 s3 = session.resource('s3')
-mongo_client = pymongo.MongoClient("mongodb://admin:DqVp7MKleg4y7YXk@ds117960.mlab.com:17960/content-metadata")
+mongo_client = pymongo.MongoClient("")
 db = mongo_client['content-metadata']
 content = db['content']
 
