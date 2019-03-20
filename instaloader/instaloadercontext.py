@@ -82,6 +82,9 @@ class InstaloaderContext:
         # Cache profile from id (mapping from id to Profile)
         self.profile_id_cache = dict()
 
+        with open('channels.json') as f:
+            self.json_data = json.load(f)
+
     @contextmanager
     def anonymous_copy(self):
         session = self._session
@@ -532,31 +535,33 @@ class InstaloaderContext:
         :raises ConnectionException: When download repeatedly failed."""
 
         if content.find({'PostId': post.shortcode}).count() == 0:
-            bucket = s3.Bucket(self.bucket)
-            if ".jpg?" in url:
-                ext = ".jpg"
-            else:
-                ext = ".mp4"
-            file_name = uuid.uuid4().__str__() + ext
-            file_format = getFileFormat(ext)
-            bucket.upload_fileobj(self.get_raw(url).raw, self.channel + "/Instagram/" + file_name)
+            channel = self.getChannelByOwnerId(post.owner_id)
+            if channel is not None:
+                bucket = s3.Bucket(self.bucket)
+                if ".jpg?" in url:
+                    ext = ".jpg"
+                else:
+                    ext = ".mp4"
+                file_name = uuid.uuid4().__str__() + ext
+                file_format = self.getFileFormat(ext)
+                bucket.upload_fileobj(self.get_raw(url).raw, channel + "/Instagram/" + file_name)
 
-            content.insert_one(
-                {
-                        "Channel": self.channel,
-                        "ContentMetadataId": uuid.uuid4().__str__(),
-                        "CreatedOn": str(datetime.now()),
-                        "FileBlobId": file_name,
-                        "Format": file_format,
-                        "OriginalDescription": metadata_string,
-                        "ModifiedDescription": "",
-                        "Comments": "",
-                        "Published": False,
-                        "Source": "Instagram",
-                        "Starred": True,
-                        "PostId": post.shortcode
-                }
-            )
+                content.insert_one(
+                    {
+                            "Channel": channel,
+                            "ContentMetadataId": uuid.uuid4().__str__(),
+                            "CreatedOn": str(datetime.now()),
+                            "FileBlobId": file_name,
+                            "Format": file_format,
+                            "OriginalDescription": metadata_string,
+                            "ModifiedDescription": "",
+                            "Comments": "",
+                            "Published": False,
+                            "Source": "Instagram",
+                            "Starred": True,
+                            "PostId": post.shortcode
+                    }
+                )
 
 
     @property
@@ -570,8 +575,15 @@ class InstaloaderContext:
             self._root_rhx_gis = self.get_json('', {})['rhx_gis']
         return self._root_rhx_gis
 
-def getFileFormat(file_ext):
-    if file_ext == ".mp4":
-        return "Video"
+    def getFileFormat(self, file_ext):
+        if file_ext == ".mp4":
+            return "Video"
 
-    return "Picture"
+        return "Picture"
+
+    def getChannelByOwnerId(self, ownwer_id):
+        for channel in self.json_data:
+            if ownwer_id in self.json_data[channel]:
+                return channel
+
+        return None
